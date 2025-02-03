@@ -173,10 +173,19 @@ void handleRoot() {
     <p>m_found )" + String(targets.size()) + R"(</p>
     <p>deauth frames per second: )" + String(deauthPacketsPerSecond) + R"(</p>
     <p>beacon frames per second: )" + String(beaconPacketsPerSecond) + R"(</p>
+    <form method="post" action="/memchk">
+        <input type="submit" value="Check mem", class="btn">
+    </form>
     </body>
     </html>
     )";
     server.send(200, "text/html", html);
+}
+
+void handleMemchk() {
+    server.send(200, "text/plain", String(ESP.getFreeHeap()));
+  heap_caps_print_heap_info( MALLOC_CAP_INTERNAL );
+
 }
 
 void handleRescan() {
@@ -222,9 +231,10 @@ void handleRun() {
     server.send(301);
     isRunning = !isRunning;
     if (isRunning) {
-    aps = (AccessPoint*)malloc(targets.size() * sizeof(AccessPoint));
-        for (int i = 0; i < targets.size(); i++) {
-            memcpy(&aps[i], &targets[i], sizeof(AccessPoint));
+        free(aps);
+        aps = (AccessPoint*)malloc(targets.size() * sizeof(AccessPoint));
+            for (int i = 0; i < targets.size(); i++) {
+                memcpy(&aps[i], &targets[i], sizeof(AccessPoint));
         }
     }
 }
@@ -284,6 +294,7 @@ void createServer() {
     server.on("/beacon", handleBeacon);
     server.on("/auto", handleAuto);
     server.on("/skibidi", handleSkibidi);
+    server.on("/memchk", handleMemchk);
 }
 
 void tickServer() {
@@ -294,9 +305,9 @@ void tickServer() {
 //                     SETUP
 //=======================================================================
 void setup() {
-  WiFi.mode(WIFI_AP_STA);
-  WiFi.softAP("Leviofan-v2", "12345678", 1, 0, 1);
   Serial.begin(115200);
+  WiFi.mode(WIFI_AP);
+  WiFi.softAP(SSID, PASSWORD, CHANNEL, 0, 1);
   initScan(&found);
   aps = scan();
   uptime = millis();
@@ -314,27 +325,36 @@ void setup() {
 //=======================================================================
 void loop() {
   tickServer();
-  if (isRunning) {
+static unsigned long lastDeauthTime = 0;
+static unsigned long lastBeaconTime = 0;
+const unsigned long deauthInterval = 1000 / maxDeauthPacketsPerSecond;
+const unsigned long beaconInterval = 1000 / maxBeaconPacketsPerSecondForAP;
+
+if (isRunning) {
     if (isRunningAuto && worktime <= millis() - uptime) {
-        Serial.printf("%u", uptime);
-        Serial.print("Rescanning...\n");
-        initScan(&found);
-        free(aps);
-        aps = scan();
-        uptime = millis();
-        it = 0;
+            Serial.printf("%u", uptime);
+            Serial.print("Rescanning...\n");
+            initScan(&found);
+            free(aps);
+            aps = scan();
+            uptime = millis();
+            it = 0;
     }
-    sendDeauthPacket(aps + it, target);
 
-    it++;
-    if (it >= found) {
-      it = 0;
+    if (millis() - lastDeauthTime >= deauthInterval) {
+            sendDeauthPacket(aps + it, target);
+            it++;
+            if (it >= found) {
+                    it = 0;
+            }
+            lastDeauthTime = millis();
     }
-    delay(0);
-  }
+}
 
-
+if (millis() - lastBeaconTime >= beaconInterval) {
     beaconSpammer(&isRunningBeacon);
+    lastBeaconTime = millis();
+}
     //skibidiSpammer(&isRunningSkibidi);
 }
 //=====================================================================

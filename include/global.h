@@ -5,4 +5,6 @@
 #define CHANNEL 1
 short deauthPacketsPerSecond;
 short beaconPacketsPerSecond;
+short maxDeauthPacketsPerSecond = 20;
+short maxBeaconPacketsPerSecondForAP = 8;
 #endif

